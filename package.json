@@ -1,0 +1,26 @@
+{
+  "name": "git-report-generator",
+  "version": "1.0.0",
+  "description": "Automatic generation of daily, weekly, and monthly reports from git commit logs using AI",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "simple-git": "^3.19.0",
+    "axios": "^1.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.0",
+    "@types/node": "^20.5.0",
+    "vitest": "^0.34.0",
+    "ts-node": "^10.9.0"
+  },
+  "keywords": ["git", "reports", "ai", "automation"],
+  "author": "",
+  "license": "MIT"
+}
