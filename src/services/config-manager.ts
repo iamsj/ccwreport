@@ -30,7 +30,7 @@ export class ConfigurationManager {
     try {
       // Check if config file exists
       const configExists = await this.configFileExists();
-      
+
       if (!configExists) {
         if (this.options.createIfMissing) {
           const defaultConfig = this.createDefaultConfiguration();
@@ -43,18 +43,23 @@ export class ConfigurationManager {
 
       // Read and parse configuration file
       const configData = await fs.readFile(this.configPath, 'utf-8');
-      const config = JSON.parse(configData) as SystemConfig;
+      const parsedConfig = JSON.parse(configData) as Partial<SystemConfig>;
 
       // Convert date strings back to Date objects
-      config.lastUpdated = new Date(config.lastUpdated);
-      
+      if (parsedConfig.lastUpdated) {
+        parsedConfig.lastUpdated = new Date(parsedConfig.lastUpdated);
+      }
+
+      // Apply defaults to ensure all required fields are present
+      const config = ConfigurationValidator.applyDefaults(parsedConfig);
+
       // Validate configuration if requested
       if (this.options.validateOnLoad) {
-        const validation = ConfigurationValidator.validateSystemConfig(config);
+        const validation = ConfigurationValidator.validateConfigurationComprehensive(config);
         if (!validation.isValid) {
           throw new Error(`Invalid configuration: ${validation.errors.join(', ')}`);
         }
-        
+
         // Log warnings if present
         if (validation.warnings && validation.warnings.length > 0) {
           console.warn('Configuration warnings:', validation.warnings.join(', '));
@@ -62,11 +67,11 @@ export class ConfigurationManager {
       }
 
       return config;
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in configuration file: ${error.message}`);
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in configuration file: ${err.message}`);
       }
-      throw error;
+      throw err;
     }
   }
 
@@ -91,8 +96,8 @@ export class ConfigurationManager {
       // Write configuration file with proper formatting
       const configJson = JSON.stringify(config, null, 2);
       await fs.writeFile(this.configPath, configJson, 'utf-8');
-    } catch (error) {
-      throw new Error(`Failed to save configuration: ${error.message}`);
+    } catch (err: any) {
+      throw new Error(`Failed to save configuration: ${err.message}`);
     }
   }
 
@@ -112,11 +117,128 @@ export class ConfigurationManager {
   async validateConfigurationFile(): Promise<ValidationResult> {
     try {
       const config = await this.loadConfiguration();
-      return ConfigurationValidator.validateSystemConfig(config);
-    } catch (error) {
+      return ConfigurationValidator.validateConfigurationComprehensive(config);
+    } catch (err: any) {
       return {
         isValid: false,
-        errors: [error.message]
+        errors: [err.message]
+      };
+    }
+  }
+
+  /**
+   * Sanitizes and saves configuration, fixing common issues
+   */
+  async sanitizeAndSaveConfiguration(config: SystemConfig): Promise<SystemConfig> {
+    try {
+      // Sanitize the configuration first
+      const sanitizedConfig = ConfigurationValidator.sanitizeConfiguration(config);
+
+      // Apply defaults to ensure completeness
+      const completeConfig = ConfigurationValidator.applyDefaults(sanitizedConfig);
+
+      // Save the sanitized configuration
+      await this.saveConfiguration(completeConfig);
+
+      return completeConfig;
+    } catch (err: any) {
+      throw new Error(`Failed to sanitize and save configuration: ${err.message}`);
+    }
+  }
+
+  /**
+   * Creates an enhanced default configuration with user preferences
+   */
+  createEnhancedDefaultConfiguration(options?: {
+    preferredProvider?: 'openai' | 'anthropic' | 'local';
+    preferredFormat?: 'markdown' | 'html';
+    enableAllReportTypes?: boolean;
+    customOutputPath?: string;
+  }): SystemConfig {
+    return ConfigurationValidator.createEnhancedDefaultConfiguration(options);
+  }
+
+  /**
+   * Validates configuration completeness and provides detailed feedback
+   */
+  async validateConfigurationCompleteness(): Promise<ValidationResult> {
+    try {
+      // Read raw configuration without applying defaults to preserve user settings
+      const configExists = await this.configFileExists();
+      if (!configExists) {
+        return {
+          isValid: false,
+          errors: ['Configuration file not found']
+        };
+      }
+
+      const configData = await fs.readFile(this.configPath, 'utf-8');
+      const parsedConfig = JSON.parse(configData) as Partial<SystemConfig>;
+
+      // Convert date strings back to Date objects
+      if (parsedConfig.lastUpdated) {
+        parsedConfig.lastUpdated = new Date(parsedConfig.lastUpdated);
+      }
+
+      // Apply defaults but preserve user-specified disabled states
+      const config = ConfigurationValidator.applyDefaults(parsedConfig);
+
+      // Override with original user settings for enabled/disabled states
+      if (parsedConfig.dataSources) {
+        parsedConfig.dataSources.forEach((userSource, index) => {
+          if (config.dataSources[index] && userSource.enabled !== undefined) {
+            config.dataSources[index].enabled = userSource.enabled;
+          }
+        });
+      }
+
+      if (parsedConfig.reportTypes) {
+        parsedConfig.reportTypes.forEach((userReportType, index) => {
+          if (config.reportTypes[index] && userReportType.enabled !== undefined) {
+            config.reportTypes[index].enabled = userReportType.enabled;
+          }
+        });
+      }
+
+      return ConfigurationValidator.validateConfigurationCompleteness(config);
+    } catch (err: any) {
+      return {
+        isValid: false,
+        errors: [err.message]
+      };
+    }
+  }
+
+  /**
+   * Checks for edge cases and potential configuration issues
+   */
+  async validateConfigurationEdgeCases(): Promise<ValidationResult> {
+    try {
+      // Read raw configuration without applying defaults to preserve user settings
+      const configExists = await this.configFileExists();
+      if (!configExists) {
+        return {
+          isValid: false,
+          errors: ['Configuration file not found']
+        };
+      }
+
+      const configData = await fs.readFile(this.configPath, 'utf-8');
+      const parsedConfig = JSON.parse(configData) as Partial<SystemConfig>;
+
+      // Convert date strings back to Date objects
+      if (parsedConfig.lastUpdated) {
+        parsedConfig.lastUpdated = new Date(parsedConfig.lastUpdated);
+      }
+
+      // Apply defaults for validation
+      const config = ConfigurationValidator.applyDefaults(parsedConfig);
+
+      return ConfigurationValidator.validateConfigurationEdgeCases(config);
+    } catch (err: any) {
+      return {
+        isValid: false,
+        errors: [err.message]
       };
     }
   }
@@ -127,12 +249,12 @@ export class ConfigurationManager {
   async backupConfiguration(): Promise<string> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupPath = `${this.configPath}.backup.${timestamp}`;
-    
+
     try {
       await fs.copyFile(this.configPath, backupPath);
       return backupPath;
-    } catch (error) {
-      throw new Error(`Failed to create configuration backup: ${error.message}`);
+    } catch (err: any) {
+      throw new Error(`Failed to create configuration backup: ${err.message}`);
     }
   }
 
@@ -142,8 +264,8 @@ export class ConfigurationManager {
   async restoreConfiguration(backupPath: string): Promise<void> {
     try {
       await fs.copyFile(backupPath, this.configPath);
-    } catch (error) {
-      throw new Error(`Failed to restore configuration from backup: ${error.message}`);
+    } catch (err: any) {
+      throw new Error(`Failed to restore configuration from backup: ${err.message}`);
     }
   }
 
@@ -170,54 +292,6 @@ export class ConfigurationManager {
    * Creates a default configuration
    */
   private createDefaultConfiguration(): SystemConfig {
-    return {
-      version: '1.0.0',
-      lastUpdated: new Date(),
-      dataSources: [
-        {
-          type: 'git',
-          enabled: true,
-          name: 'default-git',
-          repositories: [
-            {
-              name: 'current-repo',
-              path: '.',
-              branch: 'main'
-            }
-          ]
-        }
-      ],
-      aiConfig: {
-        provider: 'openai',
-        apiKey: '', // User needs to set this
-        model: 'gpt-4',
-        customPrompts: {
-          daily: 'Generate a concise daily report summarizing the git commits from today. Focus on key changes, features, and bug fixes.',
-          weekly: 'Create a comprehensive weekly report highlighting major developments, completed features, and overall progress from the past week\'s git commits.',
-          monthly: 'Produce a detailed monthly report showcasing significant achievements, major features delivered, and development trends from the past month\'s git activity.'
-        },
-        timeout: 30000,
-        maxRetries: 3
-      },
-      outputConfig: {
-        format: 'markdown',
-        outputPath: './reports',
-        includeMetadata: true
-      },
-      reportTypes: [
-        {
-          type: 'daily',
-          enabled: true
-        },
-        {
-          type: 'weekly',
-          enabled: true
-        },
-        {
-          type: 'monthly',
-          enabled: false
-        }
-      ]
-    };
+    return ConfigurationValidator.applyDefaults({});
   }
 }

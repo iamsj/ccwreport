@@ -411,4 +411,197 @@ describe('ConfigurationManager', () => {
       expect(path).toBe(testConfigPath);
     });
   });
+
+  describe('sanitizeAndSaveConfiguration', () => {
+    it('should sanitize and save configuration with whitespace trimming', async () => {
+      const dirtyConfig: SystemConfig = {
+        version: '  1.0.0  ',
+        lastUpdated: new Date(),
+        dataSources: [{
+          type: 'git',
+          enabled: true,
+          name: '  test-repo  ',
+          repositories: [{
+            name: '  repo  ',
+            path: '  /path  '
+          }]
+        }],
+        aiConfig: {
+          provider: 'openai',
+          apiKey: '  sk-test-key  ',
+          model: '  gpt-4  ',
+          customPrompts: {
+            daily: 'Daily prompt',
+            weekly: 'Weekly prompt',
+            monthly: 'Monthly prompt'
+          }
+        },
+        outputConfig: {
+          format: 'markdown',
+          outputPath: '  ./reports  ',
+          includeMetadata: true
+        },
+        reportTypes: [{
+          type: 'daily',
+          enabled: true
+        }]
+      };
+
+      mockFs.mkdir.mockResolvedValue(undefined);
+      mockFs.writeFile.mockResolvedValue(undefined);
+
+      const result = await configManager.sanitizeAndSaveConfiguration(dirtyConfig);
+
+      expect(result.version).toBe('1.0.0');
+      expect(result.dataSources[0].name).toBe('test-repo');
+      expect(result.aiConfig.apiKey).toBe('sk-test-key');
+      expect(result.outputConfig.outputPath).toBe('./reports');
+      expect(mockFs.writeFile).toHaveBeenCalled();
+    });
+
+    it('should throw error if sanitized configuration is still invalid', async () => {
+      const invalidConfig = {
+        version: '1.0.0',
+        lastUpdated: new Date(),
+        dataSources: [], // This will cause validation error
+        aiConfig: {
+          provider: 'openai',
+          model: 'gpt-4',
+          customPrompts: {
+            daily: 'Daily prompt',
+            weekly: 'Weekly prompt',
+            monthly: 'Monthly prompt'
+          }
+        },
+        outputConfig: {
+          format: 'markdown',
+          outputPath: './reports',
+          includeMetadata: true
+        },
+        reportTypes: []
+      } as SystemConfig;
+
+      await expect(configManager.sanitizeAndSaveConfiguration(invalidConfig)).rejects.toThrow('Failed to sanitize and save configuration');
+    });
+  });
+
+  describe('createEnhancedDefaultConfiguration', () => {
+    it('should create enhanced default configuration with preferences', () => {
+      const config = configManager.createEnhancedDefaultConfiguration({
+        preferredProvider: 'anthropic',
+        preferredFormat: 'html',
+        enableAllReportTypes: true,
+        customOutputPath: '/custom/output'
+      });
+
+      expect(config.aiConfig.provider).toBe('anthropic');
+      expect(config.aiConfig.model).toBe('claude-3-sonnet');
+      expect(config.outputConfig.format).toBe('html');
+      expect(config.outputConfig.outputPath).toBe('/custom/output');
+      expect(config.reportTypes.every(rt => rt.enabled)).toBe(true);
+    });
+
+    it('should create default configuration without preferences', () => {
+      const config = configManager.createEnhancedDefaultConfiguration();
+
+      expect(config.version).toBe('1.0.0');
+      expect(config.dataSources).toHaveLength(1);
+      expect(config.aiConfig.provider).toBe('openai');
+      expect(config.outputConfig.format).toBe('markdown');
+    });
+  });
+
+  describe('validateConfigurationCompleteness', () => {
+    it('should validate configuration completeness', async () => {
+      const incompleteConfig: SystemConfig = {
+        version: '1.0.0',
+        lastUpdated: new Date(),
+        dataSources: [{
+          type: 'git',
+          enabled: false, // Disabled data source
+          name: 'test-repo',
+          repositories: [{
+            name: 'test',
+            path: '/test/path'
+          }]
+        }],
+        aiConfig: {
+          provider: 'openai',
+          apiKey: '', // Empty API key
+          model: 'gpt-4',
+          customPrompts: {
+            daily: 'Daily prompt',
+            weekly: 'Weekly prompt',
+            monthly: 'Monthly prompt'
+          }
+        },
+        outputConfig: {
+          format: 'markdown',
+          outputPath: './reports',
+          includeMetadata: true
+        },
+        reportTypes: [{
+          type: 'daily',
+          enabled: false // Disabled report type
+        }]
+      };
+
+      mockFs.access.mockResolvedValue(undefined);
+      mockFs.readFile.mockResolvedValue(JSON.stringify(incompleteConfig));
+
+      const result = await configManager.validateConfigurationCompleteness();
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('No data sources are enabled. Enable at least one data source to generate reports');
+      expect(result.errors).toContain('AI provider "openai" requires an API key. Please configure your API key before generating reports');
+      expect(result.warnings).toContain('No report types are enabled. Enable at least one report type (daily, weekly, or monthly) to generate reports');
+    });
+  });
+
+  describe('validateConfigurationEdgeCases', () => {
+    it('should detect edge cases in configuration', async () => {
+      const edgeCaseConfig: SystemConfig = {
+        version: 'v1.0', // Non-semantic version
+        lastUpdated: new Date(Date.now() + 86400000), // Future date
+        dataSources: [
+          {
+            type: 'git',
+            enabled: true,
+            name: 'duplicate-name',
+            repositories: [{ name: 'repo1', path: '/path1' }]
+          },
+          {
+            type: 'git',
+            enabled: true,
+            name: 'duplicate-name', // Duplicate name
+            repositories: [{ name: 'repo2', path: '/path2' }]
+          }
+        ],
+        aiConfig: {
+          provider: 'openai',
+          apiKey: 'sk-test',
+          model: 'gpt-4',
+          timeout: 60000,
+          maxRetries: 15, // Excessive retries
+          customPrompts: { daily: 'test', weekly: 'test', monthly: 'test' }
+        },
+        outputConfig: {
+          format: 'markdown',
+          outputPath: './reports',
+          includeMetadata: true
+        },
+        reportTypes: [{ type: 'daily', enabled: true }]
+      };
+
+      mockFs.access.mockResolvedValue(undefined);
+      mockFs.readFile.mockResolvedValue(JSON.stringify(edgeCaseConfig));
+
+      const result = await configManager.validateConfigurationEdgeCases();
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Duplicate data source names found: duplicate-name. Each data source must have a unique name');
+      expect(result.warnings).toContain('Version "v1.0" does not follow semantic versioning (e.g., "1.0.0"). Consider using standard version format');
+      expect(result.warnings).toContain('Configuration lastUpdated timestamp is in the future. This may indicate a clock synchronization issue');
+    });
+  });
 });

@@ -75,6 +75,23 @@ export interface ReportTypeConfig {
   customPrompt?: string;
 }
 
+// Git data models
+export interface GitCommit {
+  hash: string;
+  author: string;
+  date: Date;
+  message: string;
+  filesChanged: string[];
+  additions: number;
+  deletions: number;
+}
+
+export interface CollectedData {
+  source: string;
+  timeRange: TimeRange;
+  data: GitCommit[];
+}
+
 // Main system configuration
 export interface SystemConfig {
   dataSources: DataSourceConfig[];
