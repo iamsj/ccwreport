@@ -10,3 +10,9 @@ export * from './git-data-source';
 export * from './ai-processor';
 export * from './ai-factory';
 export * from './ai-providers';
+
+// Output formatters
+export * from './formatters';
+
+// Output file management
+export * from './output-file-manager';

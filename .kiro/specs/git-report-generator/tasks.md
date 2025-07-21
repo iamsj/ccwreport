@@ -134,15 +134,28 @@
     - Write tests for various AI failure scenarios
     - _Requirements: 5.3, 4.3_
 
-- [ ] 6. Create output formatting system
-  - [ ] 6.1 Implement markdown formatter
+- [-] 6. Create output formatting system
+
+
+
+
+
+
+
+  - [x] 6.1 Implement markdown formatter
+
     - Write MarkdownFormatter class that converts ProcessedReport to markdown
     - Support standard markdown syntax with proper formatting
     - Handle special characters and code blocks in commit messages
     - Create unit tests with various report structures
     - _Requirements: 3.1, 3.4, 5.4_
 
-  - [ ] 6.2 Implement HTML formatter
+  - [x] 6.2 Implement HTML formatter
+
+
+
+
+
     - Write HTMLFormatter class with proper HTML structure and styling
     - Add CSS styling for professional report appearance
     - Handle HTML escaping and special character encoding
@@ -150,6 +163,7 @@
     - _Requirements: 3.1, 3.3, 5.4_
 
   - [ ] 6.3 Add output file management
+
     - Implement file writing with proper error handling
     - Support custom output paths and filename generation
     - Add file overwrite protection and backup options
